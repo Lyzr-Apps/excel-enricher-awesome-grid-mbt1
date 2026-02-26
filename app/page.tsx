@@ -514,17 +514,27 @@ export default function Page() {
         } catch { /* fallback to previewRows */ }
       }
 
-      let message = `You have received an uploaded file with contact and company data. Please enrich EVERY row in the file with the following fields:
-- company revenue (estimated annual revenue)
-- company sector/industry
-- person's job title
-- decision maker status (Yes if C-level, VP, Director, or Department Head; No otherwise)
-- confidence level (High or Low based on data reliability)
+      let message = `You have received an uploaded file with contact and company data. Please enrich EVERY row.
+
+IMPORTANT SEARCH INSTRUCTIONS:
+- Many companies may be Italian. Search for revenue in Italian: "[company] fatturato annuale", "[company] ricavi", "[company] bilancio". Also try English: "[company] annual revenue".
+- Check these sources for revenue: registroimprese.it, reportaziende.it, dnb.com, crunchbase.com, company websites, annual reports, news articles.
+- For job titles, search LinkedIn specifically: "[person name] [company] LinkedIn", "[person name] [company] site:linkedin.com". Also check company websites and press releases.
+- Do NOT change or translate person names or company names from the original data.
+- Revenue must be a specific value like "€15M" or "$120M", not "N/A". If exact revenue is not available, estimate based on company size and industry.
+- Job titles must be specific (e.g., "VP Sales", "Direttore Commerciale"), not generic like "Employee".
+
+For each row provide:
+1. Revenue/Fatturato (e.g., "€15M", "$120M", "€2.5B")
+2. Industry Sector/Settore (be specific, e.g., "Consulenza IT", "Enterprise SaaS")
+3. Job Title/Ruolo (from LinkedIn or company website)
+4. Decision Maker status: "Yes" if C-level, VP, Director, Direttore, Responsabile, Founder, Managing Director, Amministratore Delegato, Partner, Head of, Titolare; "No" otherwise
+5. Confidence: "High" if data from official sources, "Low" if estimated or uncertain
 
 Return your response as JSON with this EXACT structure:
 {
   "enriched_data": [
-    {"name": "...", "company": "...", "revenue": "...", "sector": "...", "decision_maker": "Yes/No", "job_title": "...", "confidence": "High/Low"}
+    {"name": "original name unchanged", "company": "original company unchanged", "revenue": "€15M", "sector": "specific sector", "decision_maker": "Yes/No", "job_title": "specific title", "confidence": "High/Low"}
   ],
   "summary": {
     "total_records": <number>,
@@ -536,9 +546,9 @@ Return your response as JSON with this EXACT structure:
 
       if (allRows.length > 0) {
         const dataPayload = allRows.map(r => ({ name: r.name, company: r.company }))
-        message += '\n\nHere is the data to enrich:\n' + JSON.stringify(dataPayload)
+        message += '\n\nHere is the data to enrich (DO NOT change these names):\n' + JSON.stringify(dataPayload)
       } else {
-        message += '\n\nThe data is in the attached file. Parse the file to extract names and companies, then enrich each row.'
+        message += '\n\nThe data is in the attached file. Parse the file to extract names and companies, then enrich each row. Do NOT change the original names.'
       }
 
       // Step 3: Call the Manager agent
