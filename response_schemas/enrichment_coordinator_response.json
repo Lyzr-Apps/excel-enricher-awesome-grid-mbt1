@@ -1,0 +1,54 @@
+{
+  "agent_name": "Enrichment Coordinator",
+  "agent_id": "69a027495f1c147fcddc9b20",
+  "description": "Receives parsed Excel data, distributes each row to sub-agents for company and person research, aggregates enriched results, assigns confidence scores (high/low), and returns the final enriched dataset as a downloadable Excel file.",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "enriched_data": [
+      {
+        "name": "string",
+        "company": "string",
+        "revenue": "string",
+        "sector": "string",
+        "decision_maker": "string",
+        "job_title": "string",
+        "confidence": "string"
+      }
+    ],
+    "summary": {
+      "total_records": "number",
+      "decision_makers_found": "number",
+      "low_confidence_count": "number",
+      "high_confidence_rate": "string"
+    }
+  },
+  "example_response": {
+    "enriched_data": [
+      {
+        "name": "sample string",
+        "company": "sample string",
+        "revenue": "sample string",
+        "sector": "sample string",
+        "decision_maker": "sample string",
+        "job_title": "sample string",
+        "confidence": "sample string"
+      }
+    ],
+    "summary": {
+      "total_records": 0,
+      "decision_makers_found": 0,
+      "low_confidence_count": 0,
+      "high_confidence_rate": "sample string"
+    }
+  },
+  "has_module_outputs": true,
+  "module_outputs_example": {
+    "artifact_files": [
+      {
+        "file_url": "https://example.com/file.pdf"
+      }
+    ]
+  }
+}

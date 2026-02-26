@@ -1,0 +1,80 @@
+{
+  "nodes": [
+    {
+      "id": "input_node",
+      "type": "Input",
+      "label": "Excel File Upload",
+      "nodeCategory": "input"
+    },
+    {
+      "id": "enrichment_coordinator",
+      "type": "Agent",
+      "label": "Enrichment Coordinator Manager",
+      "nodeCategory": "agent",
+      "agent_id": "69a027495f1c147fcddc9b20",
+      "agent_name": "Enrichment Coordinator",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "temperature": 0.2,
+      "top_p": 1,
+      "file_output": true,
+      "is_manager": true,
+      "managed_agents": [
+        "69a0273046d462ee9ae703f1",
+        "69a027309c293c5b871a4ba1"
+      ]
+    },
+    {
+      "id": "company_research_agent",
+      "type": "Agent",
+      "label": "Company Research Agent",
+      "nodeCategory": "agent",
+      "agent_id": "69a0273046d462ee9ae703f1",
+      "agent_name": "Company Research Agent",
+      "provider": "perplexity",
+      "model": "sonar-pro",
+      "temperature": 0.2,
+      "top_p": 1,
+      "is_subagent": true,
+      "parent_agent_id": "69a027495f1c147fcddc9b20"
+    },
+    {
+      "id": "person_research_agent",
+      "type": "Agent",
+      "label": "Person Research Agent",
+      "nodeCategory": "agent",
+      "agent_id": "69a027309c293c5b871a4ba1",
+      "agent_name": "Person Research Agent",
+      "provider": "perplexity",
+      "model": "sonar-pro",
+      "temperature": 0.2,
+      "top_p": 1,
+      "is_subagent": true,
+      "parent_agent_id": "69a027495f1c147fcddc9b20"
+    },
+    {
+      "id": "output_node",
+      "type": "Output",
+      "label": "Enriched Dataset Output",
+      "nodeCategory": "end"
+    }
+  ],
+  "edges": [
+    {
+      "source": "input_node",
+      "target": "enrichment_coordinator"
+    },
+    {
+      "source": "enrichment_coordinator",
+      "target": "company_research_agent"
+    },
+    {
+      "source": "enrichment_coordinator",
+      "target": "person_research_agent"
+    },
+    {
+      "source": "enrichment_coordinator",
+      "target": "output_node"
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "app_name": "DataEnrich Pro",
+  "pattern": "manager-subagent",
+  "agents": {
+    "enrichment_coordinator": {
+      "agent_id": "69a027495f1c147fcddc9b20",
+      "agent_name": "Enrichment Coordinator",
+      "agent_type": "manager",
+      "provider": "openai",
+      "model": "gpt-4.1",
+      "temperature": 0.2,
+      "top_p": 1,
+      "file_output": true,
+      "managed_agents": [
+        "69a0273046d462ee9ae703f1",
+        "69a027309c293c5b871a4ba1"
+      ],
+      "trigger": "Enrich Data button on Main Screen"
+    },
+    "company_research_agent": {
+      "agent_id": "69a0273046d462ee9ae703f1",
+      "agent_name": "Company Research Agent",
+      "agent_type": "sub-agent",
+      "provider": "perplexity",
+      "model": "sonar-pro",
+      "temperature": 0.2,
+      "top_p": 1,
+      "parent_agent_id": "69a027495f1c147fcddc9b20",
+      "trigger": "auto (via Manager)"
+    },
+    "person_research_agent": {
+      "agent_id": "69a027309c293c5b871a4ba1",
+      "agent_name": "Person Research Agent",
+      "agent_type": "sub-agent",
+      "provider": "perplexity",
+      "model": "sonar-pro",
+      "temperature": 0.2,
+      "top_p": 1,
+      "parent_agent_id": "69a027495f1c147fcddc9b20",
+      "trigger": "auto (via Manager)"
+    }
+  },
+  "primary_agent_id": "69a027495f1c147fcddc9b20",
+  "agent_ids": [
+    "69a027495f1c147fcddc9b20",
+    "69a0273046d462ee9ae703f1",
+    "69a027309c293c5b871a4ba1"
+  ]
+}

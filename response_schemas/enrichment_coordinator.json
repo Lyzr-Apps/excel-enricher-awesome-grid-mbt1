@@ -1,0 +1,26 @@
+{
+  "agent_name": "Enrichment Coordinator",
+  "agent_id": "69a027495f1c147fcddc9b20",
+  "agent_type": "json",
+  "has_module_outputs": true,
+  "accessor": "result",
+  "response_schema": {
+    "enriched_data": [
+      {
+        "name": "string",
+        "company": "string",
+        "revenue": "string",
+        "sector": "string",
+        "decision_maker": "string",
+        "job_title": "string",
+        "confidence": "string"
+      }
+    ],
+    "summary": {
+      "total_records": "number",
+      "decision_makers_found": "number",
+      "low_confidence_count": "number",
+      "high_confidence_rate": "string"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "agent_name": "Company Research Agent",
+  "agent_id": "69a0273046d462ee9ae703f1",
+  "agent_type": "json",
+  "has_module_outputs": false,
+  "accessor": "result",
+  "response_schema": {
+    "companies": [
+      {
+        "company_name": "string",
+        "matched_name": "string",
+        "revenue": "string",
+        "sector": "string",
+        "confidence": "string"
+      }
+    ]
+  }
+}
