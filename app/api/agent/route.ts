@@ -281,11 +281,26 @@ async function pollTask(task_id: string) {
   let moduleOutputs: ModuleOutputs | undefined
   let agentResponseRaw: any = rawText
 
+  // Extract module_outputs from multiple possible locations
+  // 1. Direct on task object (most common for file_output agents)
+  if (task.module_outputs && typeof task.module_outputs === 'object') {
+    moduleOutputs = task.module_outputs
+  }
+
   try {
     const envelope = JSON.parse(rawText)
-    if (envelope && typeof envelope === 'object' && 'response' in envelope) {
-      moduleOutputs = envelope.module_outputs
-      agentResponseRaw = envelope.response
+    if (envelope && typeof envelope === 'object') {
+      // 2. Inside the response envelope
+      if ('response' in envelope) {
+        if (!moduleOutputs && envelope.module_outputs) {
+          moduleOutputs = envelope.module_outputs
+        }
+        agentResponseRaw = envelope.response
+      }
+      // 3. Check for module_outputs deeper in the response object
+      if (!moduleOutputs && envelope.module_outputs) {
+        moduleOutputs = envelope.module_outputs
+      }
     }
   } catch {
     // Not standard JSON envelope — parseLLMJson will handle it

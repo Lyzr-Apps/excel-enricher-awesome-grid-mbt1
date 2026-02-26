@@ -299,6 +299,7 @@ export default function Page() {
   const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([])
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [rawResponseText, setRawResponseText] = useState<string | null>(null)
 
   // Filter/Sort state
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
@@ -383,6 +384,90 @@ export default function Page() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [])
 
+  // === Deep extraction helper ===
+  const deepExtractEnrichedData = useCallback((obj: any, depth: number = 0): { enriched: EnrichedRecord[]; summary: any; artifacts: ArtifactFile[] } => {
+    if (!obj || depth > 10) return { enriched: [], summary: null, artifacts: [] }
+
+    // If it's a string, try to parse it
+    if (typeof obj === 'string') {
+      try {
+        const parsed = parseLLMJson(obj)
+        if (parsed && typeof parsed === 'object') {
+          return deepExtractEnrichedData(parsed, depth + 1)
+        }
+      } catch { /* ignore */ }
+      return { enriched: [], summary: null, artifacts: [] }
+    }
+
+    if (typeof obj !== 'object') return { enriched: [], summary: null, artifacts: [] }
+
+    // Direct match: enriched_data at this level
+    if (Array.isArray(obj.enriched_data) && obj.enriched_data.length > 0) {
+      return {
+        enriched: obj.enriched_data,
+        summary: obj.summary ?? null,
+        artifacts: Array.isArray(obj.artifact_files) ? obj.artifact_files : [],
+      }
+    }
+
+    // Check if this is an array of enrichment-like records directly
+    if (Array.isArray(obj) && obj.length > 0 && obj[0] && typeof obj[0] === 'object' && ('name' in obj[0] || 'company' in obj[0]) && ('revenue' in obj[0] || 'sector' in obj[0] || 'decision_maker' in obj[0])) {
+      return { enriched: obj, summary: null, artifacts: [] }
+    }
+
+    // Try known wrapper keys
+    const wrapperKeys = ['result', 'response', 'data', 'output', 'content', 'message', 'text']
+    for (const key of wrapperKeys) {
+      if (obj[key] != null) {
+        const inner = deepExtractEnrichedData(obj[key], depth + 1)
+        if (inner.enriched.length > 0) return inner
+      }
+    }
+
+    // Check all object keys for enriched_data
+    for (const key of Object.keys(obj)) {
+      if (key === 'enriched_data' && Array.isArray(obj[key])) {
+        return { enriched: obj[key], summary: obj.summary ?? null, artifacts: [] }
+      }
+    }
+
+    // Last resort: scan all values
+    for (const key of Object.keys(obj)) {
+      if (typeof obj[key] === 'object' && obj[key] !== null) {
+        const inner = deepExtractEnrichedData(obj[key], depth + 1)
+        if (inner.enriched.length > 0) return inner
+      }
+    }
+
+    return { enriched: [], summary: null, artifacts: [] }
+  }, [])
+
+  // === Extract module_outputs from any level ===
+  const extractArtifactFiles = useCallback((result: any): ArtifactFile[] => {
+    if (!result) return []
+    // Top level
+    if (Array.isArray(result.module_outputs?.artifact_files) && result.module_outputs.artifact_files.length > 0) {
+      return result.module_outputs.artifact_files
+    }
+    // Inside response
+    if (Array.isArray(result.response?.module_outputs?.artifact_files) && result.response.module_outputs.artifact_files.length > 0) {
+      return result.response.module_outputs.artifact_files
+    }
+    // Try raw_response
+    if (result.raw_response && typeof result.raw_response === 'string') {
+      try {
+        const raw = JSON.parse(result.raw_response)
+        if (Array.isArray(raw?.module_outputs?.artifact_files)) {
+          return raw.module_outputs.artifact_files
+        }
+        if (Array.isArray(raw?.response?.module_outputs?.artifact_files)) {
+          return raw.response.module_outputs.artifact_files
+        }
+      } catch { /* ignore */ }
+    }
+    return []
+  }, [])
+
   // === Enrichment ===
   const handleEnrich = useCallback(async () => {
     if (!selectedFile && !sampleMode) return
@@ -418,18 +503,52 @@ export default function Page() {
 
       const assetIds = uploadResult.asset_ids
 
-      // Step 2: Build message
-      let message = 'Please enrich the following data with company revenue, sector, decision maker status, job titles, and confidence scores.'
-      if (previewRows.length > 0) {
-        const dataToSend = previewRows.length <= 10 ? previewRows : previewRows
-        message += '\n\nData:\n' + JSON.stringify(dataToSend)
+      // Step 2: Build message with ALL parsed data (not just preview)
+      // Re-read the file to get ALL rows if CSV
+      let allRows = previewRows
+      if (selectedFile && selectedFile.name.toLowerCase().endsWith('.csv')) {
+        try {
+          const text = await selectedFile.text()
+          const parsed = parseCSV(text)
+          if (parsed.length > 0) allRows = parsed
+        } catch { /* fallback to previewRows */ }
+      }
+
+      let message = `You have received an uploaded file with contact and company data. Please enrich EVERY row in the file with the following fields:
+- company revenue (estimated annual revenue)
+- company sector/industry
+- person's job title
+- decision maker status (Yes if C-level, VP, Director, or Department Head; No otherwise)
+- confidence level (High or Low based on data reliability)
+
+Return your response as JSON with this EXACT structure:
+{
+  "enriched_data": [
+    {"name": "...", "company": "...", "revenue": "...", "sector": "...", "decision_maker": "Yes/No", "job_title": "...", "confidence": "High/Low"}
+  ],
+  "summary": {
+    "total_records": <number>,
+    "decision_makers_found": <number>,
+    "low_confidence_count": <number>,
+    "high_confidence_rate": "<percentage>"
+  }
+}`
+
+      if (allRows.length > 0) {
+        const dataPayload = allRows.map(r => ({ name: r.name, company: r.company }))
+        message += '\n\nHere is the data to enrich:\n' + JSON.stringify(dataPayload)
+      } else {
+        message += '\n\nThe data is in the attached file. Parse the file to extract names and companies, then enrich each row.'
       }
 
       // Step 3: Call the Manager agent
-      const recordCount = totalRowCount > 0 ? totalRowCount : 'unknown number of'
+      const recordCount = allRows.length > 0 ? allRows.length : (totalRowCount > 0 ? totalRowCount : 'the')
       setLoadingMessage(`Enriching ${recordCount} records... This may take a few minutes.`)
 
       const result = await callAIAgent(message, MANAGER_AGENT_ID, { assets: assetIds })
+
+      // Log raw response for debugging
+      console.log('[DataEnrich] Raw agent result:', JSON.stringify(result, null, 2).substring(0, 2000))
 
       if (!result.success) {
         setErrorMessage('Enrichment failed: ' + (result.error ?? 'Unknown error'))
@@ -438,49 +557,74 @@ export default function Page() {
         return
       }
 
-      // Step 4: Parse response
-      let parsedData = result?.response?.result
-      if (typeof parsedData === 'string') {
-        parsedData = parseLLMJson(parsedData)
+      // Step 4: Deep extract enrichment data from any nesting level
+      // Try multiple sources for the data
+      const sources = [
+        result?.response?.result,
+        result?.response,
+        result,
+      ]
+
+      // Also try parsing raw_response directly
+      if (result?.raw_response && typeof result.raw_response === 'string') {
+        try {
+          const rawParsed = parseLLMJson(result.raw_response)
+          if (rawParsed) sources.push(rawParsed)
+        } catch { /* ignore */ }
       }
-      if (parsedData && typeof parsedData === 'object' && !Array.isArray(parsedData)) {
-        if (parsedData.result && typeof parsedData.result === 'object') {
-          parsedData = parsedData.result
-        }
+
+      let extracted = { enriched: [] as EnrichedRecord[], summary: null as any, artifacts: [] as ArtifactFile[] }
+      for (const source of sources) {
+        if (!source) continue
+        extracted = deepExtractEnrichedData(source)
+        if (extracted.enriched.length > 0) break
       }
 
-      const enriched = Array.isArray(parsedData?.enriched_data) ? parsedData.enriched_data : []
-      const summaryData = parsedData?.summary ?? null
+      console.log('[DataEnrich] Extracted enriched records:', extracted.enriched.length)
 
-      // Also check for artifact files at the TOP level
-      const files = Array.isArray(result?.module_outputs?.artifact_files) ? result.module_outputs.artifact_files : []
+      // Extract artifact files from all possible locations
+      const files = extractArtifactFiles(result)
 
-      setEnrichedData(enriched)
+      // Normalize enriched records - ensure all fields exist
+      const normalizedEnriched: EnrichedRecord[] = Array.isArray(extracted.enriched) ? extracted.enriched.map((r: any) => ({
+        name: String(r.name ?? r.person_name ?? r.contact_name ?? r.full_name ?? ''),
+        company: String(r.company ?? r.company_name ?? r.organization ?? ''),
+        revenue: String(r.revenue ?? r.company_revenue ?? r.annual_revenue ?? 'N/A'),
+        sector: String(r.sector ?? r.industry ?? r.company_sector ?? 'N/A'),
+        decision_maker: String(r.decision_maker ?? r.is_decision_maker ?? r.decisionMaker ?? 'N/A'),
+        job_title: String(r.job_title ?? r.title ?? r.role ?? r.position ?? r.jobTitle ?? 'N/A'),
+        confidence: String(r.confidence ?? r.confidence_level ?? r.confidenceLevel ?? 'Low'),
+      })) : []
+
+      const summaryData = extracted.summary
+      setEnrichedData(normalizedEnriched)
       setSummary(summaryData ? {
-        total_records: Number(summaryData.total_records) || enriched.length,
+        total_records: Number(summaryData.total_records) || normalizedEnriched.length,
         decision_makers_found: Number(summaryData.decision_makers_found) || 0,
         low_confidence_count: Number(summaryData.low_confidence_count) || 0,
         high_confidence_rate: String(summaryData.high_confidence_rate ?? '0%'),
       } : {
-        total_records: enriched.length,
-        decision_makers_found: enriched.filter((r: EnrichedRecord) => /yes/i.test(r.decision_maker ?? '')).length,
-        low_confidence_count: enriched.filter((r: EnrichedRecord) => /low/i.test(r.confidence ?? '')).length,
-        high_confidence_rate: enriched.length > 0 ? Math.round((enriched.filter((r: EnrichedRecord) => /high/i.test(r.confidence ?? '')).length / enriched.length) * 100) + '%' : '0%',
+        total_records: normalizedEnriched.length,
+        decision_makers_found: normalizedEnriched.filter((r) => /yes/i.test(r.decision_maker)).length,
+        low_confidence_count: normalizedEnriched.filter((r) => /low/i.test(r.confidence)).length,
+        high_confidence_rate: normalizedEnriched.length > 0 ? Math.round((normalizedEnriched.filter((r) => /high/i.test(r.confidence)).length / normalizedEnriched.length) * 100) + '%' : '0%',
       })
       setArtifactFiles(files)
 
-      if (enriched.length > 0) {
-        setStatusMessage(`Successfully enriched ${enriched.length} records.`)
+      if (normalizedEnriched.length > 0) {
+        setStatusMessage(`Successfully enriched ${normalizedEnriched.length} records.`)
         setView('results')
       } else {
-        // Check if there's text in the response
-        const textMsg = result?.response?.message ?? result?.response?.result?.text ?? ''
-        if (textMsg) {
-          setStatusMessage('Agent responded but no structured enrichment data was returned.')
-          setEnrichedData([])
+        // Show the raw response text so user can see what agent returned
+        const responseText = result?.response?.message
+          ?? (typeof result?.response?.result === 'string' ? result.response.result : '')
+          ?? (typeof result?.response?.result?.text === 'string' ? result.response.result.text : '')
+        if (responseText) {
+          setStatusMessage('Agent responded but could not parse structured enrichment data. Check the response below.')
+          setRawResponseText(typeof responseText === 'string' ? responseText : JSON.stringify(responseText, null, 2))
           setView('results')
         } else {
-          setErrorMessage('No enrichment data was returned. The agent may not have processed the file correctly.')
+          setErrorMessage('No enrichment data was returned. The agent may not have processed the file correctly. Please try again.')
         }
       }
     } catch (err) {
@@ -489,7 +633,7 @@ export default function Page() {
       setLoading(false)
       setActiveAgentId(null)
     }
-  }, [selectedFile, sampleMode, previewRows, totalRowCount])
+  }, [selectedFile, sampleMode, previewRows, totalRowCount, deepExtractEnrichedData, extractArtifactFiles])
 
   // === Filter & Sort ===
   const getFilteredData = useCallback(() => {
@@ -556,6 +700,7 @@ export default function Page() {
     setArtifactFiles([])
     setStatusMessage(null)
     setErrorMessage(null)
+    setRawResponseText(null)
     setFilterMode('all')
     setSortField('name')
     setSortDir('asc')
@@ -843,6 +988,23 @@ export default function Page() {
                   </ScrollArea>
                 </CardContent>
               </Card>
+
+              {/* Raw Response Fallback (when parsing found no structured data) */}
+              {rawResponseText && enrichedData.length === 0 && (
+                <Card className="border border-border">
+                  <CardHeader className="p-3 pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+                      <FiAlertTriangle className="w-3.5 h-3.5 text-orange-500" />
+                      Agent Response (Raw)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-3 pt-0">
+                    <ScrollArea className="max-h-[300px]">
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words bg-muted/30 p-3 rounded-sm">{rawResponseText}</pre>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Additional artifact files */}
               {artifactFiles.length > 1 && (
